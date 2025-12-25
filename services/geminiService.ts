@@ -1,8 +1,24 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
+// Безопасное получение API ключа без краша приложения
+const getApiKey = () => {
+  try {
+    // В браузере без сборщика process может быть не определен
+    return (typeof process !== 'undefined' && process.env?.API_KEY) ? process.env.API_KEY : "";
+  } catch (e) {
+    return "";
+  }
+};
+
 export const generateSubtasks = async (taskTitle: string, description: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    console.warn("API_KEY не настроен. AI функции будут недоступны.");
+    return ["Ошибка: API_KEY не настроен в переменных окружения"];
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const prompt = `Ты — профессиональный менеджер проектов. Разбей следующую задачу на 5 конкретных и выполнимых подзадач на РУССКОМ ЯЗЫКЕ:
   
   Задача: ${taskTitle}
@@ -10,37 +26,44 @@ export const generateSubtasks = async (taskTitle: string, description: string) =
   
   Верни только список строк.`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.STRING
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.STRING
+          }
         }
       }
-    }
-  });
+    });
 
-  try {
     const jsonStr = response.text?.trim() || '[]';
     return JSON.parse(jsonStr);
   } catch (e) {
     console.error("Ошибка парсинга AI ответа", e);
-    return [];
+    return ["Не удалось сгенерировать подзадачи автоматически"];
   }
 };
 
 export const suggestTaskPriority = async (taskTitle: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  if (!apiKey) return "API_KEY не настроен";
+
+  const ai = new GoogleGenAI({ apiKey });
   const prompt = `На основе названия задачи "${taskTitle}" предложи приоритет: НИЗКИЙ, СРЕДНИЙ, ВЫСОКИЙ или СРОЧНО. Дай краткое пояснение на русском языке.`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: prompt,
-  });
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+    });
 
-  return response.text;
+    return response.text;
+  } catch (e) {
+    return "Не удалось получить рекомендацию по приоритету";
+  }
 };
