@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Task, Status, Priority } from '../types';
-import { X, Sparkles, Loader2, ListChecks, Zap } from 'lucide-react';
+import { X, Sparkles, Loader2, ListChecks, Zap, AlertCircle } from 'lucide-react';
 import { generateSubtasks } from '../services/geminiService';
 
 interface TaskModalProps {
@@ -19,6 +19,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiSubtasks, setAiSubtasks] = useState<string[]>([]);
   const [newTokens, setNewTokens] = useState(0);
+  const [apiError, setApiError] = useState<string | null>(null);
   
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -79,10 +80,20 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave }) => {
   const handleAISuggest = async () => {
     if (!title) return;
     setIsGenerating(true);
-    const result = await generateSubtasks(title, description);
-    setAiSubtasks(result.subtasks);
-    setNewTokens(prev => prev + result.tokens);
-    setIsGenerating(false);
+    setApiError(null);
+    try {
+      const result = await generateSubtasks(title, description);
+      if (result.isError) {
+        setApiError(result.errorMsg || "Произошла ошибка при обращении к AI.");
+      } else {
+        setAiSubtasks(result.subtasks);
+        setNewTokens(prev => prev + (result.tokens || 0));
+      }
+    } catch (err) {
+      setApiError("Ошибка сети. Убедитесь, что у вас есть доступ к интернету.");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const addAiToDescription = () => {
@@ -105,12 +116,12 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave }) => {
             <h2 className="text-lg font-bold text-gray-800 tracking-tight">
               {task ? 'Редактировать' : 'Новая задача'}
             </h2>
-            {task?.tokensUsed ? (
+            {(task?.tokensUsed || 0) + newTokens > 0 && (
                <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[9px] font-bold">
                  <Zap className="w-2.5 h-2.5" />
-                 {task.tokensUsed}
+                 {(task?.tokensUsed || 0) + newTokens}
                </div>
-            ) : null}
+            )}
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1.5 hover:bg-gray-50 rounded-lg transition-all">
             <X className="w-5 h-5" />
@@ -208,15 +219,24 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave }) => {
                 type="button"
                 onClick={handleAISuggest}
                 disabled={isGenerating || !title}
-                className="bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-indigo-600 disabled:opacity-50 transition-all flex items-center gap-1.5"
+                className="bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-indigo-600 disabled:opacity-50 transition-all flex items-center gap-1.5 shadow-md"
               >
                 {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <ListChecks className="w-3 h-3" />}
-                {isGenerating ? 'Думаю...' : 'Разбить'}
+                {isGenerating ? 'Думаю...' : 'Разбить на задачи'}
               </button>
             </div>
 
+            {apiError && (
+              <div className="bg-red-50 border border-red-100 p-3 rounded-lg flex items-start gap-2 mb-3 animate-in slide-in-from-top-1 duration-200">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <p className="text-[10px] font-semibold text-red-600 leading-tight">
+                  {apiError}
+                </p>
+              </div>
+            )}
+
             {aiSubtasks.length > 0 && (
-              <div className="space-y-3">
+              <div className="space-y-3 animate-in fade-in duration-300">
                 <div className="space-y-1.5">
                   {aiSubtasks.map((st, idx) => (
                     <div key={idx} className="bg-white/60 p-2 rounded-lg border border-indigo-100/30 text-[10px] font-semibold text-indigo-700 flex items-center gap-2">
@@ -253,7 +273,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave }) => {
               type="submit"
               className="flex-[2] py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-[10px] hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 uppercase tracking-wider"
             >
-              Сохранить
+              Сохранить изменения
             </button>
           </div>
         </form>
